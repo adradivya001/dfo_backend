@@ -22,7 +22,7 @@ export class JanmasethuScopePolicy {
         }
 
         if (user.role === JanmasethuUserRole.NURSE) {
-            return status === 'yellow';
+            return ['yellow', 'red'].includes(status);
         }
 
         return false;
@@ -49,7 +49,7 @@ export class JanmasethuScopePolicy {
         }
 
         if (user.role === JanmasethuUserRole.NURSE) {
-            return status === 'yellow';
+            return ['yellow', 'red'].includes(status);
         }
 
         return false;
@@ -61,11 +61,8 @@ export class JanmasethuScopePolicy {
      * - YELLOW -> NURSE_QUEUE only
      */
     validateAssignment(targetRole: JanmasethuRole, threadStatus: string): boolean {
-        if (threadStatus === 'red') {
-            return targetRole === JanmasethuRole.DOCTOR_QUEUE;
-        }
-        if (threadStatus === 'yellow') {
-            return targetRole === JanmasethuRole.NURSE_QUEUE;
+        if (threadStatus === 'red' || threadStatus === 'yellow') {
+            return targetRole === JanmasethuRole.DOCTOR_QUEUE || targetRole === JanmasethuRole.NURSE_QUEUE;
         }
         return false;
     }
@@ -94,7 +91,8 @@ export class JanmasethuScopePolicy {
      */
     shouldStartSLA(thread: Thread): boolean {
         const status = thread.status as string;
-        return status === 'red' && !!thread.assigned_user_id;
+        // Start SLA for both RED and YELLOW if assigned to a clinician
+        return ['red', 'yellow'].includes(status) && !!thread.assigned_user_id;
     }
 
     /**

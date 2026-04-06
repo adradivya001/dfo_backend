@@ -14,6 +14,7 @@ export class SentimentRepository {
                 message_id: data.message_id,
                 score: data.score,
                 label: data.label,
+                tags: data.tags,
                 provider: data.provider,
                 created_at: new Date(),
             }])

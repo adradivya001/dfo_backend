@@ -31,6 +31,7 @@ export class SentimentService {
             message_id: messageId,
             score: evaluation.score,
             label: evaluation.label,
+            tags: (evaluation as any).tags, // Capture new tags from provider
             provider: `DOMAIN_SPECIFIC_${domain.toUpperCase()}`,
         });
 

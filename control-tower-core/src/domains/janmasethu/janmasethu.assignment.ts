@@ -4,6 +4,7 @@ import { JanmasethuScopePolicy } from './JanmasethuScopePolicy';
 import { JanmasethuSlaWorker } from './janmasethu.sla';
 import { JanmasethuUserContext, JanmasethuRole, JanmasethuUserRole } from './janmasethu.types';
 import { OwnershipType } from '../../types';
+import { RealtimeEventsController } from './api/realtime-events.controller';
 
 @Injectable()
 export class JanmasethuAssignmentService {
@@ -62,10 +63,12 @@ export class JanmasethuAssignmentService {
             is_locked: false,
         });
 
-        // 6. Start SLA ONLY when RED thread assigned to specific doctor
+        // 6. Start SLA ONLY when RED/YELLOW thread assigned to specific clinician
         const updatedThread = await this.repository.findThreadById(threadId);
-        if (updatedThread && this.policy.shouldStartSLA(updatedThread)) {
-            await this.slaWorker.scheduleSla(threadId);
+        if (updatedThread && targetUserId) {
+            const cat = updatedThread.status === 'red' ? 'red' : 'yellow';
+            const role = targetRole === JanmasethuRole.DOCTOR_QUEUE ? JanmasethuUserRole.DOCTOR : JanmasethuUserRole.NURSE;
+            await this.slaWorker.scheduleSla(threadId, cat as any, role);
         }
 
         // 7. Audit & Logs
@@ -77,6 +80,14 @@ export class JanmasethuAssignmentService {
             payload: { targetUserId, targetRole, status: threadStatus },
         });
 
+        // 8. Real-time Assignment Broadcast
+        RealtimeEventsController.broadcast('THREAD_ASSIGNED', {
+            threadId,
+            targetUserId: targetUserId,
+            targetRole,
+            assignedBy: performedBy.id
+        });
+
         await this.repository.insertRoutingEvent({
             thread_id: threadId,
             actor_id: performedBy.id,
@@ -85,5 +96,53 @@ export class JanmasethuAssignmentService {
         });
 
         this.logger.log(`Thread ${threadId} assigned to ${targetUserId} by ${performedBy.id}`);
+    }
+
+    async autoAssignThread(threadId: string) {
+        this.logger.log(`Performing Smart Auto-Assignment for thread ${threadId}...`);
+
+        const thread = await this.repository.findThreadById(threadId);
+        if (!thread) throw new Error('Thread not found');
+
+        // 1. Detect required specialty (simplification: from thread metadata or first symptoms)
+        const summary = await this.repository.findSummaryByThread(threadId);
+        const specialty = summary?.structured_symptoms?.[0] || 'GENERAL';
+
+        // 2. Find available clinicians with capacity
+        const available = await this.repository.findAvailableClinicians(specialty);
+        if (available.length === 0) {
+            this.logger.warn('No available clinicians with capacity for specialty ' + specialty);
+            return;
+        }
+
+        // 3. Assign to the clinician with lowest workload
+        const bestClinician = available[0];
+
+        const targetRole = thread.status === 'red' ? JanmasethuRole.DOCTOR_QUEUE : JanmasethuRole.NURSE_QUEUE;
+
+        await this.repository.updateThreadAtomic(threadId, thread.version, {
+            assigned_user_id: bestClinician.clinician_id,
+            assigned_role: targetRole,
+            ownership: OwnershipType.AI,
+            is_locked: false,
+        });
+
+        // 4. Update Workload counter
+        await this.repository.incrementClinicianWorkload(bestClinician.clinician_id);
+
+        // 5. Real-time Broadcast
+        RealtimeEventsController.broadcast('THREAD_ASSIGNED', {
+            threadId,
+            targetUserId: bestClinician.clinician_id,
+            targetRole,
+            assignedBy: 'SYSTEM_AUTO'
+        });
+
+        // 6. Start SLA
+        const cat = thread.status === 'red' ? 'red' : 'yellow';
+        const role = targetRole === JanmasethuRole.DOCTOR_QUEUE ? JanmasethuUserRole.DOCTOR : JanmasethuUserRole.NURSE;
+        await this.slaWorker.scheduleSla(threadId, cat as any, role);
+
+        this.logger.log(`Thread ${threadId} auto-assigned to ${bestClinician.clinician_id} (${specialty})`);
     }
 }

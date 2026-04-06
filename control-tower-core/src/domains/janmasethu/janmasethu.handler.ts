@@ -6,6 +6,11 @@ import { SentimentService } from '../../kernel/sentiment/sentiment.service';
 import { RoutingService } from '../../kernel/routing/routing.service';
 import { JANMASETHU_DOMAIN } from './janmasethu.types';
 import { ThreadStatus, OwnershipType } from '../../types';
+import { JourneyStage } from './dfo.types';
+import { RealtimeEventsController } from './api/realtime-events.controller';
+import { EngagementEngineService } from './engagement-engine/engine.service';
+import { JanmasethuGuardrailService } from './risk-engine/janmasethu-guardrails';
+import { EmergencyHotlineService } from './utils/emergency-hotline.service';
 
 @Injectable()
 export class JanmasethuHandler {
@@ -17,6 +22,9 @@ export class JanmasethuHandler {
         private readonly slaWorker: JanmasethuSlaWorker,
         private readonly sentimentService: SentimentService,
         private readonly routingService: RoutingService,
+        private readonly engagementEngine: EngagementEngineService,
+        private readonly guardrails: JanmasethuGuardrailService,
+        private readonly hotline: EmergencyHotlineService,
     ) { }
 
     /**
@@ -37,7 +45,35 @@ export class JanmasethuHandler {
             return;
         }
 
-        // 2. Fetch Thread & Track Previous State
+        // 1.5. Clinical Safety Guardrail Check
+        const threadData = await this.repository.findThreadById(thread_id);
+        const lastMsg = await this.repository.findLatestMessageByThread(thread_id);
+
+        const safetyCheck = this.guardrails.isAIPermitted(
+            threadData?.status || 'green',
+            lastMsg?.sender_type || 'USER',
+            threadData?.is_locked || false
+        );
+
+        if (!safetyCheck.permitted && event.sender_type === 'AI') {
+            this.logger.warn(`🛑 AI SUPPRESSED for thread ${thread_id}: ${safetyCheck.reason}`);
+            return; // STOP: AI is not allowed to talk right now.
+        }
+
+        // 2. Patient Identity Resolution (New DFO logic)
+        // user_id is typically the WhatsApp Phone Number or Web UUID
+        let patient = await this.repository.findDFOPatientByPhone(user_id);
+        if (!patient) {
+            // Auto-register patient on first contact
+            patient = await this.repository.upsertDFOPatient({
+                phone_number: user_id,
+                full_name: 'New Patient',
+                journey_stage: JourneyStage.TRYING_TO_CONCEIVE,
+                medical_history: [],
+            });
+        }
+
+        // 3. Fetch Thread & Track Previous State
         let thread = await this.repository.findThreadById(thread_id);
         const previousStatus = thread?.status || 'green';
 
@@ -49,7 +85,24 @@ export class JanmasethuHandler {
                 status: ThreadStatus.GREEN,
                 ownership: OwnershipType.AI,
                 version: 1,
+                metadata: {
+                    patient_id: patient.id,
+                    journey_stage: patient.journey_stage,
+                    pregnancy_week: patient.pregnancy_stage,
+                }
             });
+        } else if (!thread.metadata?.patient_id) {
+            // Update existing thread with metadata if missing
+            await this.repository.updateThreadAtomic(thread_id, thread.version, {
+                metadata: {
+                    ...thread.metadata,
+                    patient_id: patient.id,
+                    journey_stage: patient.journey_stage,
+                    pregnancy_week: patient.pregnancy_stage,
+                }
+            });
+            // Re-fetch updated thread
+            thread = await this.repository.findThreadById(thread_id);
         }
 
         // 3. Append Message
@@ -69,6 +122,28 @@ export class JanmasethuHandler {
 
         // 4. Trigger Sentiment Evaluation (Triggers Escalation Policy in Core)
         await this.sentimentService.evaluateThreadSentiment(thread_id, msg.id, message, JANMASETHU_DOMAIN);
+
+        // 5. Real-time Emergency Broadcast
+        const latestThread = await this.repository.findThreadById(thread_id);
+        if (latestThread?.status === 'red') {
+            const latestRisk = await this.repository.findLatestSentimentByThread(thread_id);
+
+            // 5a. Dashboard UI Alert
+            RealtimeEventsController.broadcast('EMERGENCY_ALERT', {
+                threadId: thread_id,
+                patientId: patient.id,
+                message: message.substring(0, 50) + '...',
+                score: latestRisk?.score,
+                tags: latestRisk?.tags || []
+            });
+
+            // 5b. PHYSICAL EMERGENCY HOTLINE (Out-of-band alert)
+            await this.hotline.triggerRedAlertHotline(
+                thread_id,
+                patient.full_name,
+                latestThread.assigned_user_id || 'ON_CALL'
+            );
+        }
 
         // 5. Orchestrate Transitions via Policy Engine
         const updatedThread = await this.repository.findThreadById(thread_id);
@@ -127,12 +202,20 @@ export class JanmasethuHandler {
                 thread_id,
                 actor_id: 'SYSTEM',
                 actor_type: 'SYSTEM',
-                action: 'STATE_TRANSITION',
+                event_type: 'STATE_TRANSITION',
                 payload: { from: previousStatus, to: currentStatus, actions: transition },
             });
         }
 
-        // 6. SLA Linkage (Only if status is RED and a Doctor is already assigned - usually via AssignmentService)
-        // Note: Transitions don't auto-assign doctors, so SLA won't start in transitions per requirement.
+        // 6. Proactive Engagement Triggers
+        const finalThread = await this.repository.findThreadById(thread_id);
+        if (finalThread && previousStatus !== finalThread.status) {
+            await this.engagementEngine.processEvent('RISK_LEVEL_CHANGED', {
+                patient_id: patient.id,
+                from: previousStatus,
+                to: finalThread.status,
+                threadId: thread_id
+            });
+        }
     }
 }

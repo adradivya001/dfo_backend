@@ -38,9 +38,10 @@ export class JanmasethuTakeoverService {
             is_locked: true,
         }, { is_locked: false });
 
-        // Start SLA for Forced Unlock guardrail if thread is RED
+        // Start SLA for Forced Unlock guardrail if thread is RED/YELLOW
         if (this.policy.shouldStartSLA({ ...thread, ownership: OwnershipType.HUMAN, is_locked: true, assigned_user_id: thread.assigned_user_id })) {
-            await this.slaWorker.scheduleSla(threadId);
+            const cat = thread.status === 'red' ? 'red' : 'yellow';
+            await this.slaWorker.scheduleSla(threadId, cat as any, user.role);
         }
 
         await this.repository.insertAuditLog({

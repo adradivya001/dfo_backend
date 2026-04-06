@@ -11,11 +11,13 @@ export class JanmasethuRbacService {
             JanmasethuPermission.TAKE_CONTROL,
             JanmasethuPermission.REPLY,
             JanmasethuPermission.OVERRIDE_SLA,
+            JanmasethuPermission.VIEW_PII,
         ],
         [JanmasethuUserRole.DOCTOR]: [
             JanmasethuPermission.VIEW_THREAD,
             JanmasethuPermission.TAKE_CONTROL,
             JanmasethuPermission.REPLY,
+            JanmasethuPermission.VIEW_PII,
         ],
         [JanmasethuUserRole.NURSE]: [
             JanmasethuPermission.VIEW_THREAD,
@@ -59,9 +61,9 @@ export class JanmasethuRbacService {
             return status === 'red';
         }
 
-        // Only NURSE can take control of yellow
+        // NURSE can take control of yellow, and RED as first responder
         if (user.role === JanmasethuUserRole.NURSE) {
-            return status === 'yellow';
+            return ['yellow', 'red'].includes(status);
         }
 
         return false;
@@ -84,9 +86,13 @@ export class JanmasethuRbacService {
         }
 
         if (user.role === JanmasethuUserRole.NURSE) {
-            return status === 'yellow' && thread.assigned_user_id === user.id;
+            return ['yellow', 'red'].includes(status) && thread.assigned_user_id === user.id;
         }
 
         return false;
+    }
+
+    canViewPII(user: JanmasethuUserContext): boolean {
+        return this.hasPermission(user.role, JanmasethuPermission.VIEW_PII);
     }
 }

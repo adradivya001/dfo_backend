@@ -9,18 +9,25 @@ export class AuditService {
     ) { }
 
     async append(log: Omit<AuditLog, 'id' | 'created_at'>): Promise<void> {
+        // --- ULTIMATE SCHEAMA COMPATIBILITY ---
+        // Move all possible missing columns into the verified 'payload' JSON
+        const dbLog = {
+            thread_id: log.thread_id,
+            event_type: log.event_type || (log as any).action || 'SYSTEM_EVENT',
+            payload: {
+                ...log.payload,
+                actor_id: log.actor_id,
+                actor_type: log.actor_type,
+            },
+            created_at: new Date(),
+        };
+
         const { error } = await this.supabase
             .from('audit_logs')
-            .insert([
-                {
-                    ...log,
-                    created_at: new Date(),
-                },
-            ]);
+            .insert([dbLog]);
 
         if (error) {
             console.error('Failed to append audit log:', error);
-            // In production, we might want to handle this more robustly (e.g., local buffer or alerting)
         }
     }
 

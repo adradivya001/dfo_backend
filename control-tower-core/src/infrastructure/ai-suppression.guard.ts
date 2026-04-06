@@ -1,9 +1,10 @@
-import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common';
+import { Injectable, CanActivate, ExecutionContext, ForbiddenException, Logger } from '@nestjs/common';
 import { ThreadService } from '../kernel/thread/thread.service';
 import { OwnershipType } from '../types';
 
 @Injectable()
 export class AISuppressionGuard implements CanActivate {
+    private readonly logger = new Logger(AISuppressionGuard.name);
     constructor(private readonly threadService: ThreadService) { }
 
     async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -13,10 +14,18 @@ export class AISuppressionGuard implements CanActivate {
         if (!threadId) return true; // Let validation handle missing ID
 
         const thread = await this.threadService.getThread(threadId);
+        const status = thread.status as string;
 
-        // AI Suppression Rule: If ownership != 'AI' OR is_locked == true: abort processing.
-        if (thread.ownership !== OwnershipType.AI || thread.is_locked) {
-            throw new ForbiddenException('AI processing suppressed: Thread is locked or owned by HUMAN');
+        // EMERGENCY SUPPRESSION: If thread is YELLOW or RED, AI is silenced immediately.
+        const isEmergency = ['yellow', 'red'].includes(status.toLowerCase());
+
+        // TAKEOVER SUPPRESSION: If thread is owned by HUMAN or explicitly locked.
+        const isHumanOwned = thread.ownership !== OwnershipType.AI;
+        const isLocked = thread.is_locked;
+
+        if (isEmergency || isHumanOwned || isLocked) {
+            this.logger.warn(`AI processing suppressed for ${threadId}: emergency=${isEmergency}, humanOwned=${isHumanOwned}, locked=${isLocked}`);
+            throw new ForbiddenException('AI processing suppressed due to clinical priority or human takeover');
         }
 
         return true;

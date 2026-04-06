@@ -16,7 +16,7 @@ export class RoutingService implements OnModuleInit {
     private readonly logger = new Logger(RoutingService.name);
 
     constructor(
-        @InjectQueue('routing_queue') private readonly routingQueue: Queue,
+        // @InjectQueue('routing_queue') private readonly routingQueue: Queue,
         private readonly ownershipService: OwnershipService,
         private readonly providerRegistry: ProviderRegistry,
         private readonly threadService: ThreadService,
@@ -65,6 +65,7 @@ export class RoutingService implements OnModuleInit {
     private async enqueueRoutingJob(id: string, threadId: string, requiredRole: string) {
         const retryAttempts = this.configService.get<number>('hardening.workerRetryAttempts') || 3;
 
+        /*
         await this.routingQueue.add('process_escalation', {
             id,
             threadId,
@@ -78,5 +79,6 @@ export class RoutingService implements OnModuleInit {
             removeOnComplete: true,
             removeOnFail: false,
         });
+        */
     }
 }
