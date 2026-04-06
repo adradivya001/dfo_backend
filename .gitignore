@@ -7,3 +7,5 @@ temp_main/
 *.log
 coverage/
 .DS_Store
+dfo_backend/
+dfo_frontend/

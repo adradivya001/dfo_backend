@@ -26,6 +26,7 @@ export interface Thread {
     assigned_user_id?: string;
     is_locked: boolean;
     version: number;
+    metadata?: Record<string, any>;
     created_at: Date;
     updated_at: Date;
 }
@@ -45,6 +46,7 @@ export interface SentimentEvaluation {
     message_id: string;
     score: number;
     label: string;
+    tags?: string[];
     provider: string;
     created_at: Date;
 }
@@ -54,7 +56,8 @@ export interface AuditLog {
     thread_id?: string;
     actor_id: string;
     actor_type: 'HUMAN' | 'AI' | 'SYSTEM';
-    action: string;
+    action?: string;   // Deprecated: migrate to event_type
+    event_type?: string; // The real database column
     payload: Record<string, any>;
     created_at: Date;
 }

@@ -2,11 +2,12 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { TerminusModule } from '@nestjs/terminus';
 import { KernelModule } from './kernel/kernel.module';
-import { ThreadController } from './api/thread.controller';
-import { HealthController } from './api/health.controller';
 import { DatabaseModule } from './infrastructure/database.module';
 import { QueueModule } from './infrastructure/queue.module';
 import { JanmasethuModule } from './domains/janmasethu/janmasethu.module';
+import { DebugController } from './api/debug.controller';
+import { ThreadController } from './api/thread.controller';
+import { HealthController } from './api/health.controller';
 import configuration from './config/configuration';
 
 @Module({
@@ -20,22 +21,12 @@ import configuration from './config/configuration';
     DatabaseModule,
     QueueModule,
     JanmasethuModule,
-    // Register a 'test' domain to verify the framework is working
-    KernelModule.register({
-      sentimentProvider: {
-        evaluate: async (text: string) => ({ score: 0.5, label: 'neutral' })
-      },
-      escalationPolicy: {
-        shouldEscalate: async () => false,
-        getRequiredRole: () => 'AGENT'
-      },
-      domainNotifier: {
-        notifyOwnershipSwitch: async () => { },
-        notifyStatusChange: async () => { }
-      }
-    }),
+    KernelModule, // Load without .register() to avoid the dynamic module masking bug
   ],
-  controllers: [ThreadController, HealthController],
-  providers: [],
+  controllers: [
+    ThreadController,
+    HealthController,
+    DebugController
+  ],
 })
 export class AppModule { }

@@ -2,25 +2,32 @@ import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
+import { HealthcareExceptionFilter } from './infrastructure/filters/healthcare-exception.filter';
 import helmet from 'helmet';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, {
+    logger: ['error', 'warn', 'log', 'debug'],
+  });
 
   // Security Hardening
   app.use(helmet());
   app.enableCors();
+
+  // Global Guards & Filters
+  app.useGlobalFilters(new HealthcareExceptionFilter());
 
   // Global Validation
   app.useGlobalPipes(new ValidationPipe({
     whitelist: true,
     forbidNonWhitelisted: true,
     transform: true,
+    errorHttpStatusCode: 422, // Unprocessable Entity
   }));
 
   const port = process.env.PORT || 3000;
   await app.listen(port);
-  console.log(`Control Tower Core is running on: http://localhost:${port}`);
+  console.log(`[Janmasethu DFO] Control Tower Core is running on: http://localhost:${port}`);
 }
 
 bootstrap().catch(err => {
