@@ -37,6 +37,11 @@ import { JanmasethuLeadsService } from './janmasethu.leads.service';
 import { JanmasethuEncryptionService } from './utils/encryption.service';
 import { JanmasethuRbacService } from './janmasethu.rbac';
 import { MessagingModule } from './channel/messaging.module';
+import { EmergencyHotlineService } from './utils/emergency-hotline.service';
+import { VitalsModule } from './vitals/vitals.module';
+import { ClinicalIntelligenceModule } from './clinical-intelligence/clinical-intelligence.module';
+import { AlertingModule } from './alerting/alerting.module';
+import { ConsentModule } from './consent/consent.module';
 
 @Module({
     imports: [
@@ -51,6 +56,10 @@ import { MessagingModule } from './channel/messaging.module';
         MessagingModule,
         DocumentModule,
         AnalyticsModule,
+        VitalsModule,
+        ClinicalIntelligenceModule,
+        AlertingModule,
+        ConsentModule,
     ],
     providers: [
         JanmasethuHandler,
@@ -77,6 +86,7 @@ import { MessagingModule } from './channel/messaging.module';
         JanmasethuLeadsService,
         JanmasethuEncryptionService,
         JanmasethuRbacService,
+        EmergencyHotlineService,
     ],
     controllers: [
         JanmasethuController,
@@ -100,6 +110,7 @@ import { MessagingModule } from './channel/messaging.module';
         JanmasethuLeadsService,
         JanmasethuEncryptionService,
         JanmasethuRbacService,
+        EmergencyHotlineService,
     ],
 })
 export class JanmasethuModule implements OnModuleInit {
